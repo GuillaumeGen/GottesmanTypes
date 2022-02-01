@@ -1,0 +1,13 @@
+verbatim:
+  cabal-version: 3.4
+
+name: GottesmanTypes
+version: 0.0.1
+
+dependencies:
+  - base
+
+library:
+  source-dirs: ./.
+  ghc-options:
+    -Wall
