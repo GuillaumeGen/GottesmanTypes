@@ -17,8 +17,8 @@ data IsNat (n :: Nat) :: Type where
 
 type family EqN (m :: Nat) (n :: Nat) :: Bool where
   EqN 'ZN 'ZN = 'True
-  EqN 'ZN ('SN _) = 'False
-  EqN ('SN _) 'ZN = 'False
+  EqN 'ZN _ = 'False
+  EqN _ 'ZN = 'False
   EqN ('SN m) ('SN n) = EqN m n
 
 type family AddN (m :: Nat) (n :: Nat) :: Nat where
@@ -32,11 +32,6 @@ type family MultN (m :: Nat) (n :: Nat) :: Nat where
 type family Pred (n :: Nat) :: Nat where
   -- Pred 'ZN = error "Zero has no predecessor"
   Pred ('SN n) = n
-
-type family Half (n :: Nat) :: Nat where
-  Half 'ZN = 'ZN
-  Half ('SN ('SN n)) = 'SN (Half n)
-  -- Half ('SN 'ZN) = error "Impossible to divide an odd number by 2"
 
 type family Twice (n :: Nat) :: Nat where
   Twice 'ZN = 'ZN
@@ -52,11 +47,11 @@ type family Geq (m :: Nat) (n :: Nat) :: Bool where
   Geq 'ZN ('SN n) = 'False
   Geq ('SN m) ('SN n) = Geq m n
 
-type family Compare (x :: Nat) (y :: Nat) (xBigger :: a) (eq :: a) (xSmaller :: a) :: a where
-  Compare ('SN _) 'ZN xBigger _ _ = xBigger
-  Compare 'ZN 'ZN _ eq _ = eq
-  Compare 'ZN ('SN _) _ _ xSmaller = xSmaller
-  Compare ('SN x) ('SN y) xBigger eq xSmaller = Compare x y xBigger eq xSmaller
+type family Compare (x :: Nat) (y :: Nat) :: Ordering where
+  Compare ('SN _) 'ZN = 'GT
+  Compare 'ZN 'ZN = 'EQ
+  Compare 'ZN ('SN _) = 'LT
+  Compare ('SN x) ('SN y) = Compare x y
 
 type family Odd (n :: Nat) :: Bool where
   Odd 'ZN = 'False
@@ -80,12 +75,12 @@ type family PGCD (a :: Nat) (b :: Nat) :: Nat where
   PGCD a 'ZN = a
   PGCD a b = PGCD b (Rem a b)
 
-type family CompareN (x :: Nat) (y :: Nat) (smX :: a) (eq :: a) (smY :: a) :: a where
-  CompareN 'ZN 'ZN _ eq _ = eq
-  CompareN 'ZN ('SN _) smX _ _ = smX
-  CompareN ('SN _) 'ZN _ _ smY = smY
-  CompareN ('SN x) ('SN y) smX eq smY =
-    CompareN x y smX eq smY
+type family CompareN (x :: Nat) (y :: Nat) :: Ordering where
+  CompareN 'ZN 'ZN = 'EQ
+  CompareN 'ZN ('SN _) = 'LT
+  CompareN ('SN _) 'ZN = 'GT
+  CompareN ('SN x) ('SN y) =
+    CompareN x y
 
 -- One can count
 

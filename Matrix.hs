@@ -22,6 +22,9 @@ data Mat (a :: Type) :: Type where
 data IsMat (f :: a -> Type) (m :: Mat a) :: Type where
   IsM :: IsList (IsList f) l -> IsMat f ('Mat l)
 
+type family IsMatC (m :: Mat C) :: Type where
+  IsMatC m = IsMat IsC m
+
 type family NbLines (m :: Mat a) :: Nat where
   NbLines ('Mat l) = Length l
 
@@ -48,34 +51,23 @@ type family AuxFillMatrix
   (accMat :: [[a]])
   (accLine :: [a]) :: Mat a where
     AuxFillMatrix _ _ 'ZN _ m _ = 'Mat m
-    AuxFillMatrix f cMax ('SN l) 'ZN '[] (c ': lTl) =
-      AuxFillMatrix f cMax l cMax ((c ': lTl) ': '[]) '[]
-    AuxFillMatrix f cMax ('SN l) 'ZN (mHd ': mTl) (c ': lTl) =
-      AuxFillMatrix f cMax l cMax ((c ': lTl) ': mHd ': mTl) '[]
-    AuxFillMatrix f cMax ('SN l) ('SN c) mAcc '[] =
-      AuxFillMatrix f cMax ('SN l) c mAcc (Apply2 f l c ': '[])
-    AuxFillMatrix f cMax ('SN l) ('SN c) mAcc (hd ': lTl) =
-      AuxFillMatrix f cMax ('SN l) c mAcc (Apply2 f l c ': hd ': lTl)
+    AuxFillMatrix f cMax ('SN l) 'ZN accMat accLine =
+      AuxFillMatrix f cMax l cMax (accLine ': accMat) '[]
+    AuxFillMatrix f cMax ('SN l) ('SN c) mAcc accLine =
+      AuxFillMatrix f cMax ('SN l) c mAcc (Apply2 f l c ': accLine)
 
-data Interleaved :: Mat C -> *
-data DiagIM :: Mat C -> *
+data PartialOneControl :: Mat C -> *
 data PartialOneProd :: Mat C -> Mat C -> *
 type family Apply2 (f :: *) (x :: k1) (y :: k2) :: k3 where
   Apply2 (PartialOneProd m1 m2) l c = AuxComputeOneProd m1 m2 (NbLines m2) l c 'ZN ZeroC (EqN 'ZN (NbLines m2))
   Apply2 (PartialOneTens m1 m2) l c = AuxComputeOneTens m1 m2 (Quo l (NbLines m2)) (Rem l (NbLines m2)) (Quo c (NbCols m2)) (Rem c (NbCols m2))
-  Apply2 (Interleaved m) l c = AuxInterleaved m l c (Even l) (Even c)
-  Apply2 (DiagIM m) l c = AuxDiagIM m l c (Geq l (NbLines m)) (Geq c (NbCols m))
+  Apply2 (PartialOneControl m) l c = AuxComputeOneControl m l c (Geq l (NbLines m)) (Geq c (NbCols m))
 
-type family AuxInterleaved (m :: Mat C) (l :: Nat) (c :: Nat) (evenL :: Bool) (evenC :: Bool) :: C where
-  AuxInterleaved m l c 'True _ = IfThenElse (EqN l c) OneC ZeroC
-  AuxInterleaved m l c 'False 'True = ZeroC
-  AuxInterleaved m l c 'False 'False = Access m (Half (Pred l)) (Half (Pred c))
-
-type family AuxDiagIM (m :: Mat C) (l :: Nat) (c :: Nat) (bigL :: Bool) (bigC :: Bool) :: C where
-  AuxDiagIM m l c 'True 'True = Access m (SubN l (NbLines m)) (SubN c (NbCols m))
-  AuxDiagIM m l c 'True 'False = ZeroC
-  AuxDiagIM m l c 'False 'True = ZeroC
-  AuxDiagIM m l c 'False 'False = IfThenElse (EqN l c) OneC ZeroC
+type family AuxComputeOneControl (m :: Mat C) (l :: Nat) (c :: Nat) (bigL :: Bool) (bigC :: Bool) :: C where
+  AuxComputeOneControl m l c 'True 'True = Access m (SubN l (NbLines m)) (SubN c (NbCols m))
+  AuxComputeOneControl m l c 'True 'False = ZeroC
+  AuxComputeOneControl m l c 'False 'True = ZeroC
+  AuxComputeOneControl m l c 'False 'False = IfThenElse (EqN l c) OneC ZeroC
 
 type family AuxComputeOneProd
   (m1 :: Mat C)
@@ -104,52 +96,92 @@ type family AuxComputeOneTens
       MultC (Access m1 qL qC) (Access m2 rL rC)
 
 -- Here we assume that the 4x4 is a tensorial product.
-type family UnsafeUntensor44 (m :: Mat C) :: (Mat C, Mat C) where
+type family UnsafeUntensor44 (m :: Mat C) :: (Mat C, (Mat C, C)) where
   UnsafeUntensor44 m =
-    IfThenElse
-      (IsNullC (Access m 'ZN 'ZN))
-      (IfThenElse
-        (IsNullC (Access m 'ZN OneN))
-        (IfThenElse
-          (IsNullC (Access m 'ZN TwoN))
-          ('(,)
-            ('Mat
-              ((ZeroC ': OneC ': '[]) ':
-              (MultC (Access m TwoN OneN) (InvC (Access m 'ZN ThreeN)) ': MultC (Access m TwoN ThreeN) (InvC (Access m 'ZN ThreeN)) ': '[]) ':
-              '[]
-              )
-            )
-            ('Mat ((ZeroC ': Access m 'ZN ThreeN ': '[]) ': (Access m OneN TwoN  ': Access m OneN ThreeN ': '[]) ': '[]))
-          )
-          ('(,)
-            ('Mat
-              ((ZeroC ': OneC ': '[]) ':
-              (MultC (Access m TwoN 'ZN) (InvC (Access m 'ZN TwoN)) ': MultC (Access m TwoN TwoN) (InvC (Access m 'ZN TwoN)) ': '[]) ':
-              '[]
-              )
-            )
-            ('Mat ((Access m 'ZN TwoN ': Access m 'ZN ThreeN ': '[]) ': (Access m OneN TwoN  ': Access m OneN ThreeN ': '[]) ': '[]))
-          )
-        )
-        ('(,)
-          ('Mat
-            ((OneC ': MultC (Access m 'ZN ThreeN) (InvC (Access m 'ZN OneN)) ': '[]) ':
-            (MultC (Access m TwoN OneN) (InvC (Access m 'ZN OneN)) ': MultC (Access m TwoN ThreeN) (InvC (Access m 'ZN OneN)) ': '[]) ':
-            '[]
-            )
-          )
-          ('Mat ((ZeroC ': Access m 'ZN OneN ': '[]) ': (Access m OneN 'ZN  ': Access m OneN OneN ': '[]) ': '[]))
+    UnsafeUntensor44Null00 (IsNullC (Access m 'ZN 'ZN)) m
+
+type family UnsafeUntensor44Null00 (b :: Bool) (m :: Mat C) :: (Mat C, (Mat C, C)) where
+  UnsafeUntensor44Null00 'True m =
+    UnsafeUntensor44Null01 (IsNullC (Access m 'ZN OneN)) m
+  UnsafeUntensor44Null00 'False m =
+    '(,)
+      ('Mat
+        ( (OneC ': DivC (Access m 'ZN TwoN) (Access m 'ZN 'ZN) ': '[]) ':
+          (DivC (Access m TwoN 'ZN) (Access m 'ZN 'ZN) ': DivC (Access m TwoN TwoN) (Access m 'ZN 'ZN) ': '[]) ':
+        '[]
         )
       )
       ('(,)
         ('Mat
-          ((OneC ': MultC (Access m 'ZN TwoN) (InvC (Access m 'ZN 'ZN)) ': '[]) ':
-          (MultC (Access m TwoN 'ZN) (InvC (Access m 'ZN 'ZN)) ': MultC (Access m TwoN TwoN) (InvC (Access m 'ZN 'ZN)) ': '[]) ':
-          '[]
+          ( (OneC ': DivC (Access m 'ZN OneN) (Access m 'ZN 'ZN) ': '[]) ':
+            (DivC (Access m OneN 'ZN) (Access m 'ZN 'ZN)  ': DivC (Access m OneN OneN) (Access m 'ZN 'ZN) ': '[]) ':
+            '[]
           )
         )
-        ('Mat ((Access m 'ZN 'ZN ': Access m 'ZN OneN ': '[]) ': (Access m OneN 'ZN  ': Access m OneN OneN ': '[]) ': '[]))
+        (Access m 'ZN 'ZN)
       )
+
+type family UnsafeUntensor44Null01 (b :: Bool) (m :: Mat C) :: (Mat C, (Mat C, C)) where
+  UnsafeUntensor44Null01 'True m =
+    UnsafeUntensor44Null02 (IsNullC (Access m 'ZN TwoN)) m
+  UnsafeUntensor44Null01 'False m =
+    '(,)
+      ('Mat
+        ( (OneC ': DivC (Access m 'ZN ThreeN) (Access m 'ZN OneN) ': '[]) ':
+          (DivC (Access m TwoN OneN) (Access m 'ZN OneN) ': DivC (Access m TwoN ThreeN) (Access m 'ZN OneN) ': '[]) ':
+          '[]
+        )
+      )
+      ('(,)
+        ('Mat
+          ( (ZeroC ': OneC ': '[]) ':
+            (DivC (Access m OneN 'ZN) (Access m 'ZN OneN)  ': DivC (Access m OneN OneN) (Access m 'ZN OneN) ': '[]) ':
+            '[]
+          )
+        )
+        (Access m 'ZN OneN)
+      )
+
+type family UnsafeUntensor44Null02 (b :: Bool) (m :: Mat C) :: (Mat C, (Mat C, C)) where
+  UnsafeUntensor44Null02 'True m =
+    '(,)
+      ('Mat
+        ( (ZeroC ': OneC ': '[]) ':
+          (DivC (Access m TwoN OneN) (Access m 'ZN ThreeN) ': DivC (Access m TwoN ThreeN) (Access m 'ZN ThreeN) ': '[]) ':
+          '[]
+        )
+      )
+      ('(,)
+        ('Mat
+          ( (ZeroC ': OneC ': '[]) ':
+            (DivC (Access m OneN TwoN) (Access m 'ZN ThreeN)  ': DivC (Access m OneN ThreeN) (Access m 'ZN ThreeN) ': '[]) ':
+            '[]
+          )
+        )
+        (Access m 'ZN ThreeN)
+      )
+  UnsafeUntensor44Null02 'False m =
+    '(,)
+      ('Mat
+        ( (ZeroC ': OneC ': '[]) ':
+          (DivC (Access m TwoN 'ZN) (Access m 'ZN TwoN) ': DivC (Access m TwoN TwoN) (Access m 'ZN TwoN) ': '[]) ':
+          '[]
+        )
+      )
+      ('(,)
+        ('Mat
+          ( (OneC ': DivC (Access m 'ZN ThreeN) (Access m 'ZN TwoN) ': '[]) ':
+            (DivC (Access m OneN TwoN) (Access m 'ZN TwoN)  ': DivC (Access m OneN ThreeN) (Access m 'ZN TwoN) ': '[]) ':
+            '[]
+          )
+        )
+        (Access m 'ZN TwoN)
+      )
+
+type family UnsafeUntensor44Type (m :: Mat C) :: Type where
+  UnsafeUntensor44Type m = UnsafeUntensor44TypeAux (UnsafeUntensor44 m)
+type family UnsafeUntensor44TypeAux (t :: (Mat C, (Mat C, C))) :: Type where
+  UnsafeUntensor44TypeAux ('(,) m1 ('(,) m2 c)) = (IsMatC m1, IsMatC m2, IsC c)
 
 type family AddFirstLine (l :: [a]) (m :: Mat a) :: Mat a where
   AddFirstLine l ('Mat tl) = 'Mat (l ': tl)
@@ -162,3 +194,41 @@ type family NormalizeMatC (m :: Mat C) :: Mat C where
   NormalizeMatC ('Mat '[]) = 'Mat '[]
   NormalizeMatC ('Mat (x ': tl)) =
     AddFirstLine (NormalizeListC x) (NormalizeMatC ('Mat tl))
+
+type family OneHeaded (m :: Mat C) :: (Mat C, C) where
+  OneHeaded m = ExtractHead '[] '[] (NormalizeMatC m)
+type family ExtractHead (accLine :: [C]) (accPrevLines :: [[C]]) (m :: Mat C) :: (Mat C, C) where
+  ExtractHead accLine accPrevLines ('Mat ('[] ': tl)) =
+    ExtractHead '[] (accLine ': accPrevLines) ('Mat tl)
+  ExtractHead accLine accPrevLines ('Mat ((hd ': tlCurrLines) ': tlNextLines)) =
+    ExtractHeadAux (IsNullC hd) accLine accPrevLines hd tlCurrLines tlNextLines
+
+type family ExtractHeadAux (b :: Bool) (accLine :: [C]) (accPrevLines :: [[C]])
+  (hd :: C) (tlCurrLines :: [C]) (tlNextLines :: [[C]]) :: (Mat C, C) where
+    ExtractHeadAux 'True accLine accPrevLines _ tlCurrLines tlNextLines =
+      ExtractHead (ZeroC ': accLine) accPrevLines ('Mat (tlCurrLines ': tlNextLines))
+    ExtractHeadAux 'False accLine accPrevLines hd tlCurrLines tlNextLines =
+      '(,)
+        ('Mat
+          (Concat accPrevLines
+            (Concat accLine (OneC ': DivideLine hd tlCurrLines) ':
+              DivideMat hd tlNextLines
+            )
+          )
+        )
+        hd
+
+type family OneHeadedType (m :: Mat C) :: Type where
+  OneHeadedType m = OneHeadedTypeAux (OneHeaded m)
+type family OneHeadedTypeAux (t :: (Mat C, C)) :: Type where
+  OneHeadedTypeAux ('(,) m c) = (IsMatC m, IsC c)
+
+type family DivideMat (x :: C) (l :: [[C]]) :: [[C]] where
+  DivideMat x '[] = '[]
+  DivideMat x (hd ': tl) = DivideLine x hd ': DivideMat x tl
+type family DivideLine (x :: C) (l :: [C]) :: [C] where
+  DivideLine x '[] = '[]
+  DivideLine x (hd ': tl) = DivC hd x ': DivideLine x tl
+
+type family MatrixControl (m :: Mat C) :: Mat C where
+  MatrixControl m = FillMatrix (PartialOneControl m) (Twice (NbLines m)) (Twice (NbCols m))

@@ -23,12 +23,12 @@ type family Neg (b :: Bool) :: Bool where
   Neg 'False = 'True
 
 type family And (a :: Bool) (b :: Bool) :: Bool where
-  And 'True b = b
-  And 'False _ = 'False
+  And 'True 'True = 'True
+  And _ _ = 'False
 
 type family Or (a :: Bool) (b :: Bool) :: Bool where
-  Or 'True _ = 'True
-  Or 'False b = b
+  Or 'False 'False = 'False
+  Or _ _ = 'True
 
 type family IfThenElse (b :: Bool) (x :: a) (y :: a) :: a where
   IfThenElse 'True x _ = x

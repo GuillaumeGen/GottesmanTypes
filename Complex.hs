@@ -7,8 +7,6 @@
 
 module Complex where
 
-import Data.Kind ( Type )
-
 import Bool
 import Nat
 import Int
@@ -30,52 +28,55 @@ type C = [(Q, [Z])]
 
 type IsC = IsList (IsPair IsQ (IsList IsZ))
 
+multIsC :: IsC a -> IsC b -> IsC (MultC a b)
+multIsC = undefined
+
 type family IsNullC (x :: C) :: Bool where
   IsNullC '[] = 'True
   IsNullC ('(,) q _ ': tl) =
-    IfThenElse
-      (IsNullQ q)
-      (IsNullC tl)
-      'False
+    IsNullCAux (IsNullQ q) tl
+type family IsNullCAux (b :: Bool) (c :: C) :: Bool where
+  IsNullCAux 'True c = IsNullC c
+  IsNullCAux 'False _ = 'False
 
 type family EqC (a :: C) (b :: C) :: Bool where
   EqC '[] '[] = 'True
-  EqC '[] ('(,) q _ ': tl) =
-    IfThenElse
-      (IsNullQ q)
-      (EqC '[] tl)
-      'False
-  EqC '[] _ = 'False
-  EqC ('(,) q _ ': tl) '[] =
-    IfThenElse
-      (IsNullQ q)
-      (EqC tl '[])
-      'False
-  EqC _ '[] = 'False
+  EqC '[] ('(,) q _ ': tl) = EqCAuxZero (IsNullQ q) tl
+  EqC ('(,) q _ ': tl) '[] = EqCAuxZero (IsNullQ q) tl
   EqC ('(,) qA sqA ': tlA) ('(,) qB sqB ': tlB) =
-    IfThenElse
-      (IsNullQ qA)
-      (EqC tlA ('(,) qB sqB ': tlB))
-      (IfThenElse
-        (IsNullQ qB)
-        (EqC ('(,) qA sqA ': tlA) tlB)
+    EqCAux (IsNullQ qA) (IsNullQ qB) qA sqA tlA qB sqB tlB
+
+type family EqCAuxZero (b :: Bool) (c :: C) :: Bool where
+  EqCAuxZero 'True c = EqC '[] c
+  EqCAuxZero 'False _ = 'False
+
+type family EqCAux
+  (nullA :: Bool) (nullB :: Bool)
+  (qA :: Q) (sqA :: [Z]) (cA :: C)
+  (qB :: Q) (sqB :: [Z]) (cB :: C) :: Bool where
+    EqCAux 'True 'True _ _ cA _ _ cB = EqC cA cB
+    EqCAux 'True 'False _ _ cA qB sqB cB = EqC cA ('(,) qB sqB ': cB)
+    EqCAux 'False 'True qA sqA cA _ _ cB = EqC ('(,) qA sqA ': cA) cB
+    EqCAux 'False 'False qA sqA cA qB sqB cB =
+      And
+        (EqQ qA qB)
         (And
-          (EqQ qA qB)
-          (And
-            (EqListZ sqA sqB)
-            (EqC tlA tlB)
-          )
+          (EqListZ sqA sqB)
+          (EqC cA cB)
         )
-      )
 
 type family AddC (a :: C) (b :: C) :: C where
   AddC '[] b = b
   AddC a '[] = a
   AddC ('(,) qA sqA ': tlA) ('(,) qB sqB ': tlB) =
-    CompareListZ sqA sqB
-      ('(,) qA sqA ': AddC tlA ('(,) qB sqB ': tlB))
-      ('(,) (AddQ qA qB) sqA ': AddC tlA tlB)
-      ('(,) qB sqB ': AddC ('(,) qA sqA ': tlA) tlB)
+    AddCAux (CompareListZ sqA sqB) qA sqA tlA qB sqB tlB
+
+type family AddCAux (ord :: Ordering)
+  (qA :: Q) (sqA :: [Z]) (cA :: C)
+  (qB :: Q) (sqB :: [Z]) (cB :: C) :: C where
+    AddCAux 'LT qA sqA cA qB sqB cB = ('(,) qA sqA ': AddC cA ('(,) qB sqB ': cB))
+    AddCAux 'EQ qA sqA cA qB sqB cB = ('(,) (AddQ qA qB) sqA ': AddC cA cB)
+    AddCAux 'GT qA sqA cA qB sqB cB = ('(,) qB sqB ': AddC ('(,) qA sqA ': cA) cB)
 
 type family MultC (a :: C) (b :: C) :: C where
   MultC '[] _ = '[]
@@ -96,10 +97,18 @@ type family AuxMultMono (q :: Q) (acc :: [Z]) (sqA :: [Z]) (sqB :: [Z]) :: C whe
   AuxMultMono q acc '[] sq = ('(,) q (Concat (Reverse sq) acc) ': '[])
   AuxMultMono q acc sq '[] = ('(,) q (Concat (Reverse sq) acc) ': '[])
   AuxMultMono q acc (a ': tlA) (b ': tlB) =
-    CompareZ a b
-      (AuxMultMono q (b ': acc) (a ': tlA) tlB)
-      (AuxMultMono (MultQ q (CastZQ a)) acc tlA tlB)
-      (AuxMultMono q (a ': acc) tlA (b ': tlB))
+    AuxMultMonoAux (CompareZ a b) q acc a tlA b tlB
+
+type family AuxMultMonoAux (ord :: Ordering)
+  (q :: Q) (acc :: [Z])
+  (a :: Z) (tlA :: [Z])
+  (b :: Z) (tlB :: [Z]) :: C where
+    AuxMultMonoAux 'LT q acc a tlA b tlB =
+      AuxMultMono q (b ': acc) (a ': tlA) tlB
+    AuxMultMonoAux 'EQ q acc a tlA b tlB =
+      AuxMultMono (MultQ q (CastZQ a)) acc tlA tlB
+    AuxMultMonoAux 'GT q acc a tlA b tlB =
+      AuxMultMono q (a ': acc) tlA (b ': tlB)
 
 type family ZeroC :: C where
   ZeroC = '[]
@@ -133,3 +142,6 @@ type family NormalizeC (x :: C) :: C where
       (IsNullQ q)
       (NormalizeC tl)
       ('(,) (Simplify q) sq ': NormalizeC tl)
+
+type family DivC (x :: C) (y :: C) :: C where
+  DivC x y = MultC x (InvC y)

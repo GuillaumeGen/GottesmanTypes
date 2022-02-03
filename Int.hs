@@ -56,17 +56,15 @@ type family AddZ (m :: Z) (n :: Z) :: Z where
   AddZ ('Int 'Positive m) ('Int 'Positive n) =
     'Int 'Positive (AddN m n)
   AddZ ('Int 'Positive m) ('Int 'Negative n) =
-    IfThenElse
-      (Geq m n)
-      ('Int 'Positive (SubN m n))
-      ('Int 'Negative (SubN n m))
+    AddZAux (Geq m n) m n
   AddZ ('Int 'Negative m) ('Int 'Positive n) =
-    IfThenElse
-      (Geq n m)
-      ('Int 'Positive (SubN n m))
-      ('Int 'Negative (SubN m n))
+    AddZAux (Geq n m) n m
   AddZ ('Int 'Negative m) ('Int 'Negative n) =
     'Int 'Negative (AddN m n)
+
+type family AddZAux (geqPosNeg :: Bool) (pos :: Nat) (neg :: Nat) :: Z where
+  AddZAux 'True pos neg = 'Int 'Positive (SubN pos neg)
+  AddZAux 'False pos neg = 'Int 'Negative (SubN neg pos)
 
 type family MultZ (m :: Z) (n :: Z) :: Z where
   MultZ ('Int _ 'ZN) _ = ZeroZ
@@ -89,23 +87,25 @@ type family EqListZ (lA :: [Z]) (lB :: [Z]) :: Bool where
       (EqZ a b)
       (EqListZ tlA tlB)
 
-type family CompareZ (x :: Z) (y :: Z) (smX :: a) (eq :: a) (smY :: a) :: a where
-  CompareZ ('Int 'Negative x) ('Int 'Negative y) smX eq smY =
-    CompareN x y smY eq smX
-  CompareZ ('Int 'Negative x) ('Int 'Positive y) smX _ _ = smX
-  CompareZ ('Int 'Positive x) ('Int 'Negative y) _ _ smY = smY
-  CompareZ ('Int 'Positive x) ('Int 'Positive y) smX eq smY =
-    CompareN x y smX eq smY
+type family CompareZ (x :: Z) (y :: Z) :: Ordering where
+  CompareZ ('Int 'Negative x) ('Int 'Negative y) =
+    CompareN y x
+  CompareZ ('Int 'Negative x) ('Int 'Positive y) = 'LT
+  CompareZ ('Int 'Positive x) ('Int 'Negative y) = 'GT
+  CompareZ ('Int 'Positive x) ('Int 'Positive y) =
+    CompareN x y
 
-type family CompareListZ (x :: [Z]) (y :: [Z]) (smX :: a) (eq :: a) (smY :: a) :: a where
-  CompareListZ '[] '[] _ eq _ = eq
-  CompareListZ (_ ': _) '[] _ _ smY = smY
-  CompareListZ '[] (_ ': _) smX _ _ = smX
-  CompareListZ (x ': tlX) (y ': tlY) smX eq smY =
-    CompareZ x y
-      smX
-      (CompareListZ tlX tlY smX eq smY)
-      smY
+type family CompareListZ (x :: [Z]) (y :: [Z]) :: Ordering where
+  CompareListZ '[] '[] = 'EQ
+  CompareListZ (_ ': _) '[] = 'GT
+  CompareListZ '[] (_ ': _) = 'LT
+  CompareListZ (x ': tlX) (y ': tlY) =
+    CompareListZAux (CompareZ x y) tlX tlY
+
+type family CompareListZAux (o :: Ordering) (x :: [Z]) (y :: [Z]) :: Ordering where
+  CompareListZAux 'LT x y = 'LT
+  CompareListZAux 'GT x y = 'GT
+  CompareListZAux 'EQ x y = CompareListZ x y
 
 type family OneZ :: Z where
   OneZ = CastNZ OneN
